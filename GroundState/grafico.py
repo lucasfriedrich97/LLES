@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 nq = 8
-nl = 4
+nl = 8
 
 lr = [0.1,0.01,0.001]
 
@@ -10,8 +10,8 @@ sigma = [6,12,24]
 ################## PLOT #####################
 plt.rcParams.update({'font.size': 20})
 fig, ax = plt.subplots(3,3)
-name = 'acc'
-Name = 'Acc'
+name = 'loss'
+Name = 'Loss'
 m = 0
 for LR in lr:
     y = np.loadtxt('./data_nq_{}_nl_{}/grad_lr_{}.txt'.format(nq,nl,LR))
@@ -32,9 +32,10 @@ for LR in lr:
         ax[m][n] .fill_between(dx, lstm_grad.min(0), lstm_grad.max(0), color='r', alpha=0.3)
         ax[m][n] .plot(dx, lstm_es.mean(0), 'g-',label='LLES')
         ax[m][n].fill_between(dx, lstm_es.min(0), lstm_es.max(0), color='g', alpha=0.3)
-
+        #ax[m][n].text(10,0.25,'$lr = ${}, $\sigma = \pi/${}'.format(LR,SIGMA))
+        ax[m][n].set_title('$lr = ${}, $\sigma = \pi/${}'.format(LR,SIGMA),fontsize='16')
         dy =np.array([grad.min(0).min(), lstm_grad.min(0).min(), lstm_es.min(0).min()]).min()
-        
+        #ax[m][n].set_ylim(-1,0.5)
 
         ax[m][n].tick_params(axis='both', labelsize=15)
 
@@ -48,7 +49,7 @@ for LR in lr:
     m+=1
 
 
-plt.subplots_adjust(left=0.1,bottom=0.1,right=0.95,top=0.95,wspace=0.3,hspace=0.15)
+plt.subplots_adjust(left=0.1,bottom=0.1,right=0.95,top=0.95,wspace=0.3,hspace=0.3)
 
 plt.show()
 

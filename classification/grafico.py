@@ -30,7 +30,7 @@ for LR in lr:
         ax[m][n] .fill_between(dx, lstm_grad.min(0), lstm_grad.max(0), color='r', alpha=0.3)
         ax[m][n] .plot(dx, lstm_es.mean(0), 'g-',label='LLES')
         ax[m][n].fill_between(dx, lstm_es.min(0), lstm_es.max(0), color='g', alpha=0.3)
-
+        ax[m][n].set_title('$lr = ${}, $\sigma = \pi/${}'.format(LR,SIGMA),fontsize='16')
         dy =np.array([grad.min(0).min(), lstm_grad.min(0).min(), lstm_es.min(0).min()]).min()
         
 
@@ -45,7 +45,7 @@ for LR in lr:
         n+=1
     m+=1
 
-#plt.subplots_adjust(left=0.05, right=0.9, bottom=0.1, top=0.99, wspace=0.3, hspace=0.3)
+plt.subplots_adjust(left=0.1,bottom=0.1,right=0.95,top=0.95,wspace=0.3,hspace=0.3)
 
 plt.show()
 
