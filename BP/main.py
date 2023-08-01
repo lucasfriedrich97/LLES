@@ -66,7 +66,7 @@ class QuantumClass:
 
         qobj = assemble(self.qc,shots=self.shot, parameter_binds = [ params ])
 
-        job = self.backend.run(qobj)
+        job = self.backend.run(self.qc,qobj)
 
 
 
@@ -336,6 +336,8 @@ for sigma in SIGMA:
 
 
 '''
+
+
 nq = 4
 N_LSTM = 6
 epochs = 2000
@@ -353,5 +355,4 @@ for sigma in SIGMA:
     for nl in  [2,20,40,60,80,100]:
         model2_var.append(var_model2(nq,nl,epochs,N_LSTM,sigma))
     np.savetxt('./data/var_model2_sigma_pi_{}.txt'.format(sigma),model2_var)
-
 
