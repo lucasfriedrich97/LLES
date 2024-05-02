@@ -11,28 +11,40 @@ from qiskit import assemble,Aer
 from qiskit.visualization import *
 from qiskit.circuit import Parameter
 from qiskit import QuantumCircuit
-#from qiskit.providers.aer import AerSimulator
+from qiskit.providers.aer import AerSimulator
 import torch.optim as optim
 from tqdm import trange
 import matplotlib.pyplot as plt
 from collections.abc import Iterable
 import functools
 import os
+from qiskit.providers.aer.noise import amplitude_damping_error
 
-##################################################################################################################
+from qiskit.providers.aer.noise import NoiseModel
+from qiskit import IBMQ, transpile
+
+
 class QuantumClass:
 
-    def __init__(self, nq,nl , backend =  Aer.get_backend('aer_simulator'), shot=1024):
+    def __init__(self, nq,nl , noise = 0, shots=1024):
         self.nq = nq
         self.nl = nl
-        self.shot = shot
-        self.backend = backend
+        self.shot = shots
+
+        noise_model = NoiseModel()
+        # Perform a noise simulation
+        gamma = noise  # Taxa de amortecimento
+
+        # Criando o erro de amortecimento de amplitude para um qubit
+        error = amplitude_damping_error(gamma)
+
+        # Adicionando o erro ao modelo de ruído para todos os gates u1, u2, u3
+        noise_model.add_all_qubit_quantum_error(error, ['u1', 'u2', 'u3'])
 
 
+        self.backend = AerSimulator(noise_model=noise_model)
 
         self.imput = { k : Parameter('imput{}'.format(k)) for k in range(self.nq) }
-
-
         self.theta = { k : Parameter('theta{}'.format(k)) for k in range(self.nq*self.nl) }
 
 
@@ -70,22 +82,28 @@ class QuantumClass:
         params1 = { self.theta[k] : theta[k].item() for k in range(self.nq*self.nl) }
         params.update(params1)
 
-        qobj = assemble(self.qc,shots=self.shot, parameter_binds = [ params ])
+        transpiled_circ = transpile(self.qc, self.backend)
+
+
+
+        qobj = assemble(transpiled_circ,shots=self.shot, parameter_binds = [ params ])
 
         job = self.backend.run(qobj)
 
 
 
         re = job.result().get_counts()
+
         prob = torch.zeros(1,2**self.nq)
         for i in re:
-          prob[0][int(i,2)] = re[i]/self.shot
+            prob[0][int(i,2)] = re[i]/self.shot
 
         H = self.E(self.nq)
         soma = 0
         for i in range(2**self.nq):
-          soma+= H[0][i]*prob[0][i]
+            soma+= H[0][i]*prob[0][i]
         return soma.reshape(1,1)
+
 
 
 ##################################################################################################################
@@ -187,11 +205,11 @@ class model1(nn.Module):
 
 
     def __init__(self,n_qubit,n_layer,
-        backend=Aer.get_backend('aer_simulator'),
+        noise=0,
         shots = 1024):
         super(model1, self).__init__()
 
-        self.quantum_circuit = QuantumClass(n_qubit,n_layer,backend,shots)
+        self.quantum_circuit = QuantumClass(n_qubit,n_layer,noise=noise,shots=shots)
         self.alfa = torch.nn.Parameter(torch.FloatTensor(n_qubit*n_layer).uniform_(-m.pi, m.pi))
 
 
@@ -206,11 +224,11 @@ class model1(nn.Module):
 class Qlayer(nn.Module):
 
 
-    def __init__(self,n_qubit,n_layer,NN,backend=Aer.get_backend('aer_simulator'),
+    def __init__(self,n_qubit,n_layer,NN,noise=0,
         shots = 1024,sigma=m.pi/24):
         super(Qlayer, self).__init__()
 
-        self.quantum_circuit = QuantumClass(n_qubit,n_layer,backend,shots)
+        self.quantum_circuit = QuantumClass(n_qubit,n_layer,noise=noise,shots=shots)
 
         self.NN = NN
         self.sigma = sigma
@@ -226,13 +244,13 @@ class Qlayer(nn.Module):
 ##################################################################################################################
 
 class model2(nn.Module):
-    def __init__(self,nq,nl,NN,d_LSTM,sigma=m.pi/24):
+    def __init__(self,nq,nl,NN,d_LSTM,sigma=m.pi/24,noise=0):
         super(model2, self).__init__()
 
         self.nq = nq
         self.nl = nl
         self.out = 1
-        self.qlayer = Qlayer(nq,nl,NN,sigma=sigma)
+        self.qlayer = Qlayer(nq,nl,NN,sigma=sigma,noise=noise)
         self.dn = d_LSTM
 
         self.lstm = nn.LSTMCell(self.out, self.nq*self.nl)
@@ -263,26 +281,6 @@ class model2(nn.Module):
 
 
 ##################################################################################################################
-class model3(nn.Module):
-
-
-    def __init__(self,n_qubit,n_layer,backend=Aer.get_backend('aer_simulator'),shots = 1024,sigma=m.pi/24):
-        super(model3, self).__init__()
-
-
-        self.sigma = sigma
-        self.quantum_circuit = QuantumClass(n_qubit,n_layer,backend,shots)
-        self.alfa = torch.nn.Parameter(torch.FloatTensor(n_qubit*n_layer).uniform_(-m.pi, m.pi))
-
-
-
-    def forward(self,input):
-
-        return TorchCircuit_NES.apply( input,self.alfa,self.quantum_circuit,self.sigma )
-
-
-
-##################################################################################################################
 
 def train( model, nq,nl,lr, epochs, optim_name,Nmodel , sigma):
     optimizer = optim.SGD(model.parameters(), lr=lr)
@@ -304,72 +302,64 @@ def train( model, nq,nl,lr, epochs, optim_name,Nmodel , sigma):
 
 
 ##################################################################################################################
-NQ =  [4,8]
-NL =   [4,8]
-epochs =1000
+NQ =  [4]
+NL =   [4]
+epochs = 1000
 N_model = 5
 n_LSTM = 2
 LR = [0.1,0.01,0.001]
 
-SIGMA = [6,12,24]
+SIGMA = [24]
 
-for nq in NQ:
-    for nl in NL:
 
-        if not os.path.exists('./data_nq_{}_nl_{}'.format(nq,nl)):
-            os.mkdir('./data_nq_{}_nl_{}'.format(nq,nl))
 
-        for lr in LR:
-            '''
-            ############### GRAD #################
-            classica = []
-            for i in range(N_model):
-                net = model1(nq,nl)
-                y=train( net, nq,nl,lr, epochs, 'GRAD',i , 0)
-                classica.append(y)
-            np.savetxt('./data_nq_{}_nl_{}/grad_lr_{}.txt'.format(nq,nl,lr),classica)
-            print('')
-            print('')
-            print('')
 
-            ############### LL #################
+for Noise in [0.01,0.03]:
+    print('--------------------------------------- Noise = {} ------------------------------'.format(Noise))
+    for nq in NQ:
+        for nl in NL:
 
-            hibrido_1 = []
-            for i in range(N_model):
-                net = model2(nq,nl,0,n_LSTM,0)
-                z=train( net, nq,nl,lr, epochs, 'LL',i , 0)
-                hibrido_1.append(z)
-            np.savetxt('./data_nq_{}_nl_{}/lstm_grad_lr_{}.txt'.format(nq,nl,lr),hibrido_1)
-            print('')
-            print('')
-            print('')
-            ############### LLES #################
-            for sigma in SIGMA:
-                hibrido_2 = []
+            if not os.path.exists('./data_nq_{}_nl_{}_noise_{}'.format(nq,nl,Noise)):
+                os.mkdir('./data_nq_{}_nl_{}_noise_{}'.format(nq,nl,Noise))
+
+            for lr in LR:
+
+                ############### GRAD #################
+                classica = []
                 for i in range(N_model):
-                    net = model2(nq,nl,1,n_LSTM,m.pi/sigma)
-                    z1=train( net, nq,nl,lr, epochs, 'LLES',i , sigma)
-                    hibrido_2.append(z1)
-                np.savetxt('./data_nq_{}_nl_{}/lstm_es_lr_{}_sigma_pi_{}.txt'.format(nq,nl,lr,sigma),hibrido_2)
+                    net = model1(nq,nl,noise=Noise)
+                    y=train( net, nq,nl,lr, epochs, 'GRAD',i , 0)
+                    classica.append(y)
+                np.savetxt('./data_nq_{}_nl_{}_noise_{}/grad_lr_{}.txt'.format(nq,nl,Noise,lr),classica)
+                del classica
                 print('')
                 print('')
                 print('')
 
-            '''
-            ############### ES #################
-            for sigma in SIGMA:
-                hibrido_3 = []
+                ############### LL #################
+
+                hibrido_1 = []
                 for i in range(N_model):
-                    net = model3(nq,nl,sigma=m.pi/sigma)
-                    z1=train( net, nq,nl,lr, epochs, 'ES',i , sigma)
-                    hibrido_3.append(z1)
-                    del z1,net
-                #np.savetxt('./data_nq_{}_nl_{}/es_lr_{}_sigma_pi_{}.txt'.format(nq,nl,lr,sigma),hibrido_3)
-                del hibrido_3
+                    net = model2(nq,nl,0,n_LSTM,0,noise=Noise)
+                    z=train( net, nq,nl,lr, epochs, 'LL',i , 0)
+                    hibrido_1.append(z)
+                np.savetxt('./data_nq_{}_nl_{}_noise_{}/lstm_grad_lr_{}.txt'.format(nq,nl,Noise,lr),hibrido_1)
+                del hibrido_1
                 print('')
                 print('')
                 print('')
-
+                ############### LLES #################
+                for sigma in SIGMA:
+                    hibrido_2 = []
+                    for i in range(N_model):
+                        net = model2(nq,nl,1,n_LSTM,sigma=m.pi/sigma,noise=Noise)
+                        z1=train( net, nq,nl,lr, epochs, 'LLES',i , sigma)
+                        hibrido_2.append(z1)
+                    np.savetxt('./data_nq_{}_nl_{}_noise_{}/lstm_es_lr_{}_sigma_pi_{}.txt'.format(nq,nl,Noise,lr,sigma),hibrido_2)
+                    del hibrido_2
+                    print('')
+                    print('')
+                    print('')
 
 
 

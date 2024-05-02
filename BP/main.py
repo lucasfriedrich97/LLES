@@ -190,10 +190,6 @@ class model1(nn.Module):
 
 
 
-
-
-
-
     def forward(self,input):
 
         return TorchCircuit.apply( input,self.alfa,self.quantum_circuit )
